@@ -291,38 +291,66 @@ WHERE table_id = '{table_name}'
         schema_name = self.config.get(self.SCHEMA_CONFIG_KEY)
         table_name = self.config.get(self.TABLE_CONFIG_KEY)
 
-        full_table_name = f'`{database_name}.{schema_name}.{table_name}`'
-        table_name_delete = f'_delete_{table_name}'
-        full_table_name_delete = f'`{database_name}.{schema_name}.{table_name_delete}`'
 
+##################################################################################
         connection = self.build_connection()
         client = connection.client
+        
+        table_name_delete = f'_delete_{table_name}'
+        source_table_id = f"{database_name}.{schema_name}.{table_name}"
+        destination_table_id = f"{database_name}.{schema_name}.{table_name_delete}"
 
-        job = client.query(
-            'SELECT 1',
-            job_config=bigquery.QueryJobConfig(create_session=True),
-        )
-        session_id = job.session_info.session_id
-        job.result()
+        source_table = client.get_table(source_table_id)
+        new_table = bigquery.Table(destination_table_id, schema=source_table.schema)
+        new_table.description = source_table.description
+        new_table.labels = source_table.labels
 
-        session_id_property = bigquery.query.ConnectionProperty(key='session_id', value=session_id)
-        query_job_config = dict(
-            create_session=False,
-            connection_properties=[session_id_property],
-        )
+        if source_table.encryption_configuration:
+            new_table.encryption_configuration = source_table.encryption_configuration
 
-        commands = [
-            f'ALTER TABLE {full_table_name} RENAME TO {table_name_delete}',
-            f'CREATE TABLE {full_table_name} AS (SELECT * FROM {full_table_name_delete})',
-            f'DROP TABLE {full_table_name_delete}',
-        ]
+        client.create_table(new_table)
+        self.logger.info(f"Created table {destination_table_id} with the same schema and metadata.")
+        job = client.copy_table(source_table_id, destination_table_id)
+        job.result() 
+        self.logger.info(f"Copied data from {source_table_id} to {destination_table_id}.")
+        
+        client.delete_table(source_table_id)
+        self.logger.info(f"Deleted old table {source_table_id}.")
 
-        for query in commands:
-            job = client.query(
-                query,
-                job_config=bigquery.QueryJobConfig(**query_job_config),
-            )
-            job.result()
+
+        # full_table_name = f'`{database_name}.{schema_name}.{table_name}`'
+        # table_name_delete = f'_delete_{table_name}'
+        # full_table_name_delete = f'`{database_name}.{schema_name}.{table_name_delete}`'
+
+        # connection = self.build_connection()
+        # client = connection.client
+
+        # job = client.query(
+        #     'SELECT 1',
+        #     job_config=bigquery.QueryJobConfig(create_session=True),
+        # )
+        # session_id = job.session_info.session_id
+        # job.result()
+
+        # session_id_property = bigquery.query.ConnectionProperty(key='session_id', value=session_id)
+        # query_job_config = dict(
+        #     create_session=False,
+        #     connection_properties=[session_id_property],
+        # )
+
+        # commands = [
+        #     f'ALTER TABLE {full_table_name} RENAME TO {table_name_delete}',
+        #     f'CREATE TABLE {full_table_name} AS (SELECT * FROM {full_table_name_delete})',
+        #     f'DROP TABLE {full_table_name_delete}',
+        # ]
+
+        # for query in commands:
+        #     job = client.query(
+        #         query,
+        #         job_config=bigquery.QueryJobConfig(**query_job_config),
+        #     )
+        #     job.result()
+##################################################################################
 
         self.logger.info('Recreating table completed.', tags)
 
