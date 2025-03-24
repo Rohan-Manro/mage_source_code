@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 import google
 import pandas as pd
-from google.api_core.exceptions import BadRequest
+from google.api_core.exceptions import BadRequest, NotFound
 from google.cloud import bigquery
 
 from mage_integrations.connections.bigquery import BigQuery as BigQueryConnection
@@ -307,6 +307,25 @@ WHERE table_id = '{table_name}'
 
         if source_table.encryption_configuration:
             new_table.encryption_configuration = source_table.encryption_configuration
+
+ #before proceeding checking for bad request ramifications form bq
+        try:
+            client.get_table(destination_table_id)
+            table_delete_exists = True
+        except NotFound:
+            table_delete_exists = False
+
+        if table_delete_exists:
+            # If _delete_ table exists, remove the old table and rename _delete_ table
+            client.delete_table(source_table_id, not_found_ok=True)
+            self.logger.info(f"Deleted existing table {source_table_id}.")
+            
+            rename_job = client.copy_table(destination_table_id, source_table_id)
+            rename_job.result()  # Wait for the job to complete
+            self.logger.info(f"Renamed {destination_table_id} back to {source_table_id}.")
+            
+            client.delete_table(destination_table_id)
+            self.logger.info(f"Deleted {destination_table_id} after renaming.")   
 
         client.create_table(new_table)
         self.logger.info(f"Created table {destination_table_id} with the same schema and metadata.")
