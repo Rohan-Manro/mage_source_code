@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 import google
 import pandas as pd
-from google.api_core.exceptions import BadRequest, NotFound
+from google.api_core.exceptions import BadRequest
 from google.cloud import bigquery
 
 from mage_integrations.connections.bigquery import BigQuery as BigQueryConnection
@@ -314,31 +314,8 @@ WHERE table_id = '{table_name}'
         job.result() 
         self.logger.info(f"Copied data from {source_table_id} to {destination_table_id}.")
         
-        # client.delete_table(source_table_id)
-        # self.logger.info(f"Deleted old table {source_table_id}.")
-
-        max_retries = 3
-        retry_count = 0
-
-        while retry_count < max_retries:
-            try:
-                client.delete_table(source_table_id)
-                self.logger.info(f"Attempt {retry_count + 1}: Deleted old table {source_table_id}.")
-                time.sleep(2)
-                try:
-                    client.get_table(source_table_id)
-                    self.logger.warning(f"Table {source_table_id} still exists after deletion attempt {retry_count + 1}. Retrying...")
-                except Exception:
-                    self.logger.info(f"Confirmed: Table {source_table_id} successfully deleted.")
-                    break  # Exit loop if table is confirmed deleted
-
-            except Exception as e:
-                self.logger.error(f"Error deleting table {source_table_id}: {e}")
-
-            retry_count += 1
-
-        if retry_count == max_retries:
-            self.logger.error(f"Failed to delete table {source_table_id} after {max_retries} attempts.")
+        client.delete_table(source_table_id)
+        self.logger.info(f"Deleted old table {source_table_id}.")
         
 
         # full_table_name = f'`{database_name}.{schema_name}.{table_name}`'
