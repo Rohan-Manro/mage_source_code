@@ -308,34 +308,38 @@ WHERE table_id = '{table_name}'
         if source_table.encryption_configuration:
             new_table.encryption_configuration = source_table.encryption_configuration
 
- #before proceeding checking for bad request ramifications form bq
-        try:
-            client.get_table(destination_table_id)
-            table_delete_exists = True
-        except NotFound:
-            table_delete_exists = False
-
-        if table_delete_exists:
-            # If _delete_ table exists, remove the old table and rename _delete_ table
-            client.delete_table(source_table_id, not_found_ok=True)
-            self.logger.info(f"Deleted existing table {source_table_id}.")
-            
-            rename_job = client.copy_table(destination_table_id, source_table_id)
-            rename_job.result()  # Wait for the job to complete
-            self.logger.info(f"Renamed {destination_table_id} back to {source_table_id}.")
-            
-            client.delete_table(destination_table_id)
-            self.logger.info(f"Deleted {destination_table_id} after renaming.")   
-
         client.create_table(new_table)
         self.logger.info(f"Created table {destination_table_id} with the same schema and metadata.")
         job = client.copy_table(source_table_id, destination_table_id)
         job.result() 
         self.logger.info(f"Copied data from {source_table_id} to {destination_table_id}.")
         
-        client.delete_table(source_table_id)
-        self.logger.info(f"Deleted old table {source_table_id}.")
+        # client.delete_table(source_table_id)
+        # self.logger.info(f"Deleted old table {source_table_id}.")
 
+        max_retries = 3
+        retry_count = 0
+
+        while retry_count < max_retries:
+            try:
+                client.delete_table(source_table_id)
+                self.logger.info(f"Attempt {retry_count + 1}: Deleted old table {source_table_id}.")
+                time.sleep(2)
+                try:
+                    client.get_table(source_table_id)
+                    self.logger.warning(f"Table {source_table_id} still exists after deletion attempt {retry_count + 1}. Retrying...")
+                except Exception:
+                    self.logger.info(f"Confirmed: Table {source_table_id} successfully deleted.")
+                    break  # Exit loop if table is confirmed deleted
+
+            except Exception as e:
+                self.logger.error(f"Error deleting table {source_table_id}: {e}")
+
+            retry_count += 1
+
+        if retry_count == max_retries:
+            self.logger.error(f"Failed to delete table {source_table_id} after {max_retries} attempts.")
+        
 
         # full_table_name = f'`{database_name}.{schema_name}.{table_name}`'
         # table_name_delete = f'_delete_{table_name}'
