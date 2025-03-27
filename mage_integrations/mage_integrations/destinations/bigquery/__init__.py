@@ -316,6 +316,13 @@ WHERE table_id = '{table_name}'
         
         client.delete_table(source_table_id)
         self.logger.info(f"Deleted old table {source_table_id}.")
+
+        renamed_table_id = source_table_id  # Set the original source table name to the variable
+        client.copy_table(destination_table_id, renamed_table_id).result()
+        self.logger.info(f"Renamed {destination_table_id} back to {renamed_table_id}.")
+
+        client.delete_table(destination_table_id)
+        self.logger.info(f"Deleted intermediate table {destination_table_id}.")
         
 
         # full_table_name = f'`{database_name}.{schema_name}.{table_name}`'
